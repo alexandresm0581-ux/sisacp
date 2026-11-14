@@ -89,7 +89,7 @@ def fig_meta_consumo(consumo: float, meta: float, unid: str, cor_c: str, cor_m: 
 
 def fig_rosca(r: dict) -> go.Figure:
     fig = go.Figure(go.Pie(values=[max(r["reduzido"], 0), max(r["a_perder"], 0)], hole=0.72,
-                           marker_color=["#FFB066", "#EAEAEA"], textinfo="none", sort=False,
+                           marker_colors=["#FFB066", "#EAEAEA"], textinfo="none", sort=False,
                            hoverinfo="label+value", labels=["Reduzido (kg)", "À perder (kg)"]))
     fig.update_layout(
         height=300, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
