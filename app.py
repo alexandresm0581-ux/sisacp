@@ -492,7 +492,7 @@ def pagina_perfil() -> None:
         st.success("Perfil atualizado.")
 
 # =====================================================================
-# NAVEGAÇÃO
+# NAVEGAÇÃO + SINCRONIZAÇÃO LOCAL -> NUVEM
 # =====================================================================
 PAGINAS = {
     "📊 Painel": pagina_painel,
@@ -506,4 +506,25 @@ st.sidebar.markdown(
     '<span style="font-size:1.9rem;font-weight:700">SISACP</span></div>',
     unsafe_allow_html=True)
 escolha = st.sidebar.radio("Navegação", list(PAGINAS), label_visibility="collapsed")
+
+# Sincronizar: manda o banco do localhost para a nuvem.
+# No localhost isso também aparece, mas não faz diferença porque já é o mesmo banco.
+# Na nuvem, ele substitui o banco da nuvem pelo arquivo que você enviar.
+st.sidebar.divider()
+with st.sidebar.expander("🔄 Sincronizar localhost → nuvem"):
+    st.caption("Use só quando quiser atualizar a nuvem/celular com o que fez no localhost. "
+               "Isso APAGA o banco da nuvem e coloca no lugar o arquivo que você enviar. "
+               "Sempre envie o arquivo mais novo do seu computador.")
+    up_db = st.file_uploader("Escolha o arquivo controle_peso.db do seu computador", type=["db"], key="sync_db")
+    if up_db is not None:
+        if st.button("Enviar e atualizar nuvem", type="primary", key="btn_sync_db"):
+            # Descobre o nome/caminho do banco usado pelo database.py, se ele expuser
+            caminho = getattr(db, "CAMINHO_BANCO", None) or getattr(db, "DB_PATH", None) or getattr(db, "BANCO", None) or "controle_peso.db"
+            # Se vier um objeto Path, converte para texto
+            caminho = str(caminho)
+            with open(caminho, "wb") as f:
+                f.write(up_db.getbuffer())
+            st.success("Nuvem atualizada com o banco do localhost!")
+            st.rerun()
+
 PAGINAS[escolha]()
