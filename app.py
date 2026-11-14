@@ -52,7 +52,6 @@ if not db.banco_existe():
 
     # 1. Tenta achar o Excel já dentro do repositório
     excel_no_repo = next(Path(".").glob("*.xlsm"), None)
-
     if excel_no_repo:
         with st.spinner(f"Importando {excel_no_repo.name}..."):
             db.criar_estrutura()
@@ -60,10 +59,18 @@ if not db.banco_existe():
         st.success("Banco criado com sucesso!")
         st.rerun()
 
-    # 2. Se não achou, deixa você enviar o Excel pelo site
-    st.markdown("Envie o seu Excel para criar o banco:")
-    arquivo = st.file_uploader("01 - Controle de Peso_v3.xlsm", type=["xlsm", "xlsx"])
+    # 2. Opção certa pra você: enviar o controle_peso.db atual do seu computador
+    st.markdown("### Envie o seu banco atual (recomendado)")
+    st.caption("Use essa opção, não o Excel. O .db tem tudo que você registrou no Localhost.")
+    db_file = st.file_uploader("controle_peso.db", type=["db", "sqlite", "sqlite3"], key="up_db_inicio")
+    if db_file:
+        Path(db.ARQUIVO_DB).write_bytes(db_file.getvalue())
+        st.success("Banco enviado! Recarregando...")
+        st.rerun()
 
+    # 3. Só se você não tiver o .db: criar do zero pelo Excel
+    st.markdown("### Ou criar do zero pelo Excel (só se não tiver o .db)")
+    arquivo = st.file_uploader("01 - Controle de Peso_v3.xlsm", type=["xlsm", "xlsx"], key="up_excel_inicio")
     if arquivo:
         with st.spinner("Importando seu Excel..."):
             tmp = Path("temp_upload.xlsm")
