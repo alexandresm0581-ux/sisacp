@@ -11,6 +11,7 @@ Para rodar:  streamlit run app.py
 """
 import math
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import plotly.graph_objects as go
 import streamlit as st
@@ -20,6 +21,12 @@ import calculos as calc
 import database as db
 
 br = calc.br
+FUSO_BR = ZoneInfo("America/Fortaleza")
+
+def agora_br():
+    """Data/hora de Patos-PB, mesmo quando o app está na nuvem (que usa UTC)."""
+    return datetime.now(FUSO_BR)
+
 DIAS_SEMANA = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
                "sexta-feira", "sábado", "domingo"]
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
@@ -168,7 +175,7 @@ def fig_por_refeicao(df) -> go.Figure:
 # PÁGINA: PAINEL (substitui a aba PRINCIPAL)
 # =====================================================================
 def pagina_painel() -> None:
-    agora = datetime.now()
+    agora = agora_br()
     topo, seletor = st.columns([3, 1])
     topo.title("SISACP - Sistema de Acompanhamento e Controle de Peso")
     topo.markdown(f"#### {DIAS_SEMANA[agora.weekday()]}, {agora.day} de {MESES[agora.month - 1]} "
@@ -202,7 +209,7 @@ def pagina_painel() -> None:
     st.divider()
 
     # ---------------- linha 2: peso
-    r = calc.resumo_peso(date.today())
+    r = calc.resumo_peso(agora.date())
     if r is None:
         st.warning("Ainda não há pesagens registradas.")
     else:
@@ -263,7 +270,7 @@ def lista_com_exclusao(tabela: str, sql: str, chave: str) -> None:
 
 def pagina_registrar() -> None:
     st.title("Registrar dados")
-    agora = datetime.now()
+    agora = agora_br()
     aba_peso, aba_agua, aba_ativ, aba_alim = st.tabs(
         ["📉 Peso", "💧 Hidratação", "🏃 Atividade física", "🍽️ Alimentação"])
 
@@ -437,7 +444,7 @@ def pagina_medicamentos() -> None:
     st.title("Medicamentos prescritos")
     df = db.consulta("SELECT id, nome, posologia, uso, data_inicio, data_alteracao, preco, qtde,"
                      " ROUND(preco * qtde, 2) AS custo FROM medicamento ORDER BY nome")
-    hoje = date.today()
+    hoje = agora_br().date()
     df["falta_alterar_dias"] = [
         (date.fromisoformat(d) - hoje).days if isinstance(d, str) else None for d in df["data_alteracao"]]
     st.dataframe(df, hide_index=True, width="stretch")
