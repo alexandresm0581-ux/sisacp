@@ -2,16 +2,15 @@
 app.py - Interface web do SISACP (Streamlit).
 
 Como o Streamlit funciona (importante para entender este arquivo):
-    * Cada vez que você clica em algo, o script INTEIRO roda de novo, de cima
+  * Cada vez que você clica em algo, o script INTEIRO roda de novo, de cima
     a baixo. Não existe "evento de clique" como no VBA.
-    * st.button(...) devolve True apenas na execução em que foi clicado.
-    * Os widgets (st.date_input, st.selectbox...) devolvem o valor atual.
+  * st.button(...) devolve True apenas na execução em que foi clicado.
+  * Os widgets (st.date_input, st.selectbox...) devolvem o valor atual.
 
 Para rodar:  streamlit run app.py
 """
 import math
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
 
 import plotly.graph_objects as go
 import streamlit as st
@@ -21,12 +20,6 @@ import calculos as calc
 import database as db
 
 br = calc.br
-FUSO_BR = ZoneInfo("America/Fortaleza")
-
-def agora_br():
-    """Data/hora de Patos-PB, mesmo quando o app está na nuvem (que usa UTC)."""
-    return datetime.now(FUSO_BR)
-
 DIAS_SEMANA = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
                "sexta-feira", "sábado", "domingo"]
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
@@ -49,23 +42,11 @@ LOGO_SVG = (
 st.set_page_config(page_title="SISACP", page_icon="📉", layout="wide")
 
 if not db.banco_existe():
-    st.title("SISACP - Primeira vez aqui")
-    st.info("Seu banco ainda não existe na nuvem. Envie seu Excel que eu crio ele pra você.")
-    up = st.file_uploader("Envie seu Excel (.xlsm)", type=["xlsm", "xlsx"])
-    if up is not None:
-        with open("01 - Controle de Peso_v3.xlsm", "wb") as f:
-            f.write(up.getbuffer())
-        st.success("Excel recebido! Importando...")
-        import subprocess, sys
-        r = subprocess.run([sys.executable, "importar_excel.py", "01 - Controle de Peso_v3.xlsm"],
-                           capture_output=True, text=True)
-        if r.returncode == 0:
-            st.success("Pronto! Banco criado.")
-            st.rerun()
-        else:
-            st.error("Erro ao importar:")
-            st.code(r.stdout + "\n" + r.stderr)
+    st.error("Banco de dados não encontrado (controle_peso.db).")
+    st.markdown("Crie-o importando seu Excel:\n\n"
+                "`python importar_excel.py \"01 - Controle de Peso_v3.xlsm\"`")
     st.stop()
+
 
 # =====================================================================
 # Funções de gráfico (cada uma recebe números e devolve uma figura)
@@ -86,6 +67,7 @@ def fig_nutrientes(consumo: dict, meta: dict) -> go.Figure:
     fig.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
     return fig
 
+
 def fig_meta_consumo(consumo: float, meta: float, unid: str, cor_c: str, cor_m: str) -> go.Figure:
     fig = go.Figure(go.Bar(
         y=[f"Consumo ({unid})", f"Meta ({unid})"], x=[consumo, meta], orientation="h",
@@ -93,6 +75,7 @@ def fig_meta_consumo(consumo: float, meta: float, unid: str, cor_c: str, cor_m: 
     fig.update_yaxes(autorange="reversed")
     fig.update_layout(height=200, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
     return fig
+
 
 def fig_rosca(r: dict) -> go.Figure:
     fig = go.Figure(go.Pie(values=[max(r["reduzido"], 0), max(r["a_perder"], 0)], hole=0.72,
@@ -104,6 +87,7 @@ def fig_rosca(r: dict) -> go.Figure:
                                f"{br(r['reduzido'])} / {br(r['reducao_necessaria'])} kg",
                           x=0.5, y=0.5, showarrow=False, font_size=18)])
     return fig
+
 
 def fig_peso_imc(df, meta_kg: float) -> go.Figure:
     rotulos = [f"{d[8:10]}/{d[5:7]}" for d in df["data"]]
@@ -124,6 +108,7 @@ def fig_peso_imc(df, meta_kg: float) -> go.Figure:
                       legend=dict(orientation="h", y=1.12))
     return fig
 
+
 def fig_faixa_imc(r: dict) -> go.Figure:
     zonas = [(15, 18.5, "Abaixo do Peso", "#FFE600"), (18.5, 25, "Normal", "#3FBF5A"),
              (25, 30, "Sobrepeso", "#F4A6A0"), (30, 35, "Obesidade G1", "#F08A4B"),
@@ -133,18 +118,20 @@ def fig_faixa_imc(r: dict) -> go.Figure:
         fig.add_shape(type="rect", x0=x0, x1=x1, y0=0, y1=1, fillcolor=cor, line_width=0, layer="below")
         fig.add_annotation(x=(x0 + x1) / 2, y=1.1, text=f"<b>{nome}</b>", showarrow=False,
                            font=dict(size=12, color="#000000"))  # preto: contraste sobre o fundo branco
-    marcadores = [("IMC atual", r["imc_atual"], 0.7, "diamond", "#1F5FA8"),
-                  ("IMC inicial", r["imc_inicial"], 0.3, "x", "#7A0000"),
-                  ("Meta", r["imc_meta"], 0.5, "star", "#FFFFFF")]
-    for nome, valor, y, simbolo, cor in marcadores:
+    # os três marcadores têm o MESMO formato (círculo com cruz); só a cor muda
+    marcadores = [("IMC atual", r["imc_atual"], 0.7, "#2F80ED"),
+                  ("IMC inicial", r["imc_inicial"], 0.3, "#C00000"),
+                  ("Meta", r["imc_meta"], 0.5, "#FFFFFF")]
+    for nome, valor, y, cor in marcadores:
         fig.add_trace(go.Scatter(x=[valor], y=[y], mode="markers", name=f"{nome}: {br(valor)}",
-                                 marker=dict(symbol=simbolo, size=17, color=cor,
-                                             line=dict(color="black", width=1.5))))
+                                 marker=dict(symbol="circle-cross", size=20, color=cor,
+                                             line=dict(color="black", width=2))))
     fig.update_xaxes(range=[15, 45], tickvals=[18.5, 25, 30, 35, 40], showgrid=False)
     fig.update_yaxes(visible=False, range=[0, 1.2])  # faixa branca enxuta acima das cores
     fig.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=100),
                       legend=dict(orientation="h", y=-0.3), plot_bgcolor="white")
     return fig
+
 
 def fig_atividades(df) -> go.Figure:
     fig = go.Figure()
@@ -159,6 +146,7 @@ def fig_atividades(df) -> go.Figure:
                       legend=dict(orientation="h", y=1.12), yaxis_title="Sessões")
     return fig
 
+
 def fig_por_refeicao(df) -> go.Figure:
     fig = go.Figure()
     fig.add_bar(x=df["refeicao"], y=df["consumo_kcal"], name="Consumo (kcal)", marker_color="#00B050",
@@ -171,11 +159,12 @@ def fig_por_refeicao(df) -> go.Figure:
                       legend=dict(orientation="h", y=1.12))
     return fig
 
+
 # =====================================================================
 # PÁGINA: PAINEL (substitui a aba PRINCIPAL)
 # =====================================================================
 def pagina_painel() -> None:
-    agora = agora_br()
+    agora = datetime.now()
     topo, seletor = st.columns([3, 1])
     topo.title("SISACP - Sistema de Acompanhamento e Controle de Peso")
     topo.markdown(f"#### {DIAS_SEMANA[agora.weekday()]}, {agora.day} de {MESES[agora.month - 1]} "
@@ -185,31 +174,8 @@ def pagina_painel() -> None:
     if ultimo:
         seletor.caption(f"Último dia com alimentação/água registradas: {ultimo:%d/%m/%Y}")
 
-    # ---------------- linha 1: o dia
-    consumo, meta = calc.consumo_do_dia(dia), calc.meta_do_dia()
-    kcal_c, kcal_m = calc.calorias_ate_ultima_refeicao(dia)
-    ml, meta_ml = calc.agua_do_dia(dia)
-    if kcal_c == 0 and ml == 0:
-        st.info(f"Nenhum registro de alimentação ou água em {dia:%d/%m/%Y}. "
-                "Use a página **Registrar** ou escolha outro dia acima.")
-
-    c1, c2, c3 = st.columns([1.2, 1, 1])
-    with c1:
-        st.subheader("Consumo de nutrientes (do dia)")
-        st.plotly_chart(fig_nutrientes(consumo, meta), width="stretch")
-    with c2:
-        st.subheader("Calorias até a última refeição")
-        st.metric("Evolução", f"{br(kcal_c / kcal_m * 100 if kcal_m else 0)}%")
-        st.plotly_chart(fig_meta_consumo(kcal_c, kcal_m, "kcal", "#92D050", "#548235"), width="stretch")
-    with c3:
-        st.subheader("Água (do dia)")
-        st.metric("Evolução", f"{br(ml / meta_ml * 100 if meta_ml else 0)}%")
-        st.plotly_chart(fig_meta_consumo(ml, meta_ml, "ml", "#7EC8E3", "#2E86C1"), width="stretch")
-
-    st.divider()
-
-    # ---------------- linha 2: peso
-    r = calc.resumo_peso(agora.date())
+    # ---------------- linha 1: peso (dados de referência, rosca, evolução)
+    r = calc.resumo_peso(date.today())
     if r is None:
         st.warning("Ainda não há pesagens registradas.")
     else:
@@ -233,6 +199,31 @@ def pagina_painel() -> None:
             st.subheader("Evolução peso & IMC")
             st.plotly_chart(fig_peso_imc(calc.evolucao_peso(), r["peso_meta"]), width="stretch")
 
+    st.divider()
+
+    # ---------------- linha 2: o dia (nutrientes, calorias, água)
+    consumo, meta = calc.consumo_do_dia(dia), calc.meta_do_dia()
+    kcal_c, kcal_m = calc.calorias_ate_ultima_refeicao(dia)
+    ml, meta_ml = calc.agua_do_dia(dia)
+    if kcal_c == 0 and ml == 0:
+        st.info(f"Nenhum registro de alimentação ou água em {dia:%d/%m/%Y}. "
+                "Use a página **Registrar** ou escolha outro dia acima.")
+
+    c1, c2, c3 = st.columns([1.2, 1, 1])
+    with c1:
+        st.subheader("Consumo de nutrientes (do dia)")
+        st.plotly_chart(fig_nutrientes(consumo, meta), width="stretch")
+    with c2:
+        st.subheader("Calorias até a última refeição")
+        st.metric("Evolução", f"{br(kcal_c / kcal_m * 100 if kcal_m else 0)}%")
+        st.plotly_chart(fig_meta_consumo(kcal_c, kcal_m, "kcal", "#92D050", "#548235"), width="stretch")
+    with c3:
+        st.subheader("Água (do dia)")
+        st.metric("Evolução", f"{br(ml / meta_ml * 100 if meta_ml else 0)}%")
+        st.plotly_chart(fig_meta_consumo(ml, meta_ml, "ml", "#7EC8E3", "#2E86C1"), width="stretch")
+
+    # ---------------- faixa de IMC (largura total)
+    if r is not None:
         st.subheader(f"Índice de massa corporal — {calc.classificar_imc(r['imc_atual'])}")
         st.plotly_chart(fig_faixa_imc(r), width="stretch")
 
@@ -251,6 +242,7 @@ def pagina_painel() -> None:
         st.subheader(f"Calorias por refeição — {dia:%d/%m/%Y}")
         st.plotly_chart(fig_por_refeicao(calc.consumo_por_refeicao(dia)), width="stretch")
 
+
 # =====================================================================
 # PÁGINA: REGISTRAR (substitui "Coletas dos Dados" + as macros VBA)
 # Cada botão faz um INSERT no banco: é o que a macro fazia ao
@@ -268,9 +260,10 @@ def lista_com_exclusao(tabela: str, sql: str, chave: str) -> None:
                 db.executa(f"DELETE FROM {tabela} WHERE id = ?", (int(id_),))
                 st.rerun()
 
+
 def pagina_registrar() -> None:
     st.title("Registrar dados")
-    agora = agora_br()
+    agora = datetime.now()
     aba_peso, aba_agua, aba_ativ, aba_alim = st.tabs(
         ["📉 Peso", "💧 Hidratação", "🏃 Atividade física", "🍽️ Alimentação"])
 
@@ -352,7 +345,7 @@ def pagina_registrar() -> None:
         else:
             itens = db.consulta("SELECT * FROM item_plano WHERE refeicao = ? ORDER BY cod_item", (refeicao,))
         rotulo = {str(int(r.id)): f"{r.cod_item} | {r.descricao} — {br(r.peso_g, 0)} g, {br(r.kcal, 0)} kcal"
-                                              + (f"  [{r.refeicao}]" if subst else "") for r in itens.itertuples()}
+                       + (f"  [{r.refeicao}]" if subst else "") for r in itens.itertuples()}
         escolhidos = st.multiselect("Itens consumidos", list(rotulo), format_func=rotulo.get, key=f"al_itens_{subst}_{refeicao}")
         porcoes = st.number_input("Porções (vale para todos os itens marcados; 0,5 = metade)",
                                   0.25, 10.0, 1.0, step=0.25, key="al_porcoes")
@@ -371,6 +364,7 @@ def pagina_registrar() -> None:
             st.success(f"{len(escolhidos)} item(ns) registrado(s) em {refeicao}.")
         lista_com_exclusao("consumo", "SELECT id, data, hora, refeicao, descricao, ROUND(kcal,0) AS kcal "
                                       "FROM vw_consumo ORDER BY data DESC, hora DESC, id DESC LIMIT 20", "al")
+
 
 # =====================================================================
 # PÁGINA: PLANO ALIMENTAR (Cardápio + itens + metas)
@@ -437,6 +431,7 @@ def pagina_plano() -> None:
         st.markdown(f"**Meta do dia:** {br(total['kcal'], 0)} kcal | P {br(total['proteinas'])} g | "
                     f"C {br(total['carboidratos'])} g | G {br(total['gorduras'])} g")
 
+
 # =====================================================================
 # PÁGINA: MEDICAMENTOS
 # =====================================================================
@@ -444,7 +439,7 @@ def pagina_medicamentos() -> None:
     st.title("Medicamentos prescritos")
     df = db.consulta("SELECT id, nome, posologia, uso, data_inicio, data_alteracao, preco, qtde,"
                      " ROUND(preco * qtde, 2) AS custo FROM medicamento ORDER BY nome")
-    hoje = agora_br().date()
+    hoje = date.today()
     df["falta_alterar_dias"] = [
         (date.fromisoformat(d) - hoje).days if isinstance(d, str) else None for d in df["data_alteracao"]]
     st.dataframe(df, hide_index=True, width="stretch")
@@ -469,6 +464,7 @@ def pagina_medicamentos() -> None:
                             ini.isoformat() if ini else None, alt.isoformat() if alt else None))
                 st.rerun()
 
+
 # =====================================================================
 # PÁGINA: PERFIL
 # =====================================================================
@@ -491,8 +487,9 @@ def pagina_perfil() -> None:
                    (nome, nasc.isoformat(), altura, meta, inicio.isoformat(), int(agua)))
         st.success("Perfil atualizado.")
 
+
 # =====================================================================
-# NAVEGAÇÃO + SINCRONIZAÇÃO NOS DOIS SENTIDOS
+# NAVEGAÇÃO
 # =====================================================================
 PAGINAS = {
     "📊 Painel": pagina_painel,
@@ -506,31 +503,4 @@ st.sidebar.markdown(
     '<span style="font-size:1.9rem;font-weight:700">SISACP</span></div>',
     unsafe_allow_html=True)
 escolha = st.sidebar.radio("Navegação", list(PAGINAS), label_visibility="collapsed")
-
-# Caminho do banco (descobre pelo database.py, se ele expuser)
-CAMINHO_BANCO = str(getattr(db, "CAMINHO_BANCO", None) or getattr(db, "DB_PATH", None) or getattr(db, "BANCO", None) or "controle_peso.db")
-
-st.sidebar.divider()
-with st.sidebar.expander("🔄 Sincronizar"):
-    st.caption("⚠️ A sincronização SUBSTITUI o banco de destino. Sempre use o banco mais novo como origem.")
-    st.markdown("**⬆️ Localhost → Nuvem**")
-    st.caption("Você registrou no computador e quer ver no celular.")
-    up_db = st.file_uploader("Escolha o controle_peso.db do computador", type=["db"], key="sync_up")
-    if up_db is not None:
-        if st.button("Enviar localhost para nuvem", type="primary", key="btn_sync_up"):
-            with open(CAMINHO_BANCO, "wb") as f:
-                f.write(up_db.getbuffer())
-            st.success("Nuvem atualizada com o banco do localhost!")
-            st.rerun()
-    st.divider()
-    st.markdown("**⬇️ Nuvem → Localhost**")
-    st.caption("Você registrou pelo celular e quer trazer para o computador. Baixe, depois substitua o arquivo na pasta do projeto e reinicie o localhost.")
-    try:
-        with open(CAMINHO_BANCO, "rb") as f:
-            dados_banco = f.read()
-        st.download_button("Baixar banco da nuvem", data=dados_banco, file_name="controle_peso.db",
-                           mime="application/octet-stream", key="btn_sync_down")
-    except FileNotFoundError:
-        st.caption("Banco ainda não encontrado.")
-
 PAGINAS[escolha]()
