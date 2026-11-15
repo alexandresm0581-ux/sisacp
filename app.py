@@ -9,6 +9,7 @@ Como o Streamlit funciona (importante para entender este arquivo):
 
 Para rodar:  streamlit run app.py
 """
+import hmac
 import math
 from datetime import date, datetime
 from pathlib import Path
@@ -41,6 +42,36 @@ LOGO_SVG = (
     '</svg>')
 
 st.set_page_config(page_title="SISACP", page_icon="📉", layout="wide")
+
+# =====================================================================
+# LOGIN - Trava o app com senha
+# A senha verdadeira NÃO fica no código. Ela fica no Secrets.
+# No computador: arquivo .streamlit/secrets.toml
+# Na nuvem: share.streamlit.io > Settings > Secrets
+# =====================================================================
+def tela_login():
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:0.6rem">{LOGO_SVG}'
+        '<span style="font-size:1.9rem;font-weight:700">SISACP</span></div>',
+        unsafe_allow_html=True)
+    st.title("Acesso restrito")
+    st.markdown("Digite a senha para entrar no seu SISACP.")
+    senha = st.text_input("Senha", type="password", key="senha_login")
+    if st.button("Entrar", type="primary"):
+        try:
+            senha_certa = st.secrets["SENHA_APP"]
+        except Exception:
+            senha_certa = "1234"
+        if senha and hmac.compare_digest(senha, senha_certa):
+            st.session_state["logado"] = True
+            st.rerun()
+        else:
+            st.error("Senha errada. Tente de novo.")
+    st.caption("Se você esqueceu a senha, ela está no Secrets do Streamlit ou no arquivo .streamlit/secrets.toml do seu computador.")
+    st.stop()
+
+if not st.session_state.get("logado"):
+    tela_login()
 
 # =====================================================================
 # BANCO NÃO EXISTE -> CRIA SOZINHO
@@ -538,5 +569,8 @@ st.sidebar.markdown(
     f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:0.6rem">{LOGO_SVG}'
     '<span style="font-size:1.9rem;font-weight:700">SISACP</span></div>',
     unsafe_allow_html=True)
+if st.sidebar.button("🚪 Sair"):
+    st.session_state["logado"] = False
+    st.rerun()
 escolha = st.sidebar.radio("Navegação", list(PAGINAS), label_visibility="collapsed")
 PAGINAS[escolha]()
