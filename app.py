@@ -21,13 +21,32 @@ from plotly.subplots import make_subplots
 import calculos as calc
 import database as db
 
+# [MELHORIA 1] Fuso horário do Brasil. Na nuvem (Streamlit Cloud) o servidor
+# usa horário UTC (3 h à frente), o que errava hora e "dia de hoje" à noite.
+try:
+    from zoneinfo import ZoneInfo
+    FUSO = ZoneInfo("America/Sao_Paulo")
+except Exception:  # Windows sem o pacote tzdata: usa o relógio local
+    FUSO = None
+
+
+def agora_br() -> datetime:
+    return datetime.now(FUSO) if FUSO else datetime.now()
+
+
+def hoje_br() -> date:
+    return agora_br().date()
+
+
 br = calc.br
 DIAS_SEMANA = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
                "sexta-feira", "sábado", "domingo"]
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
          "agosto", "setembro", "outubro", "novembro", "dezembro"]
-MES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
-COR_ATIVIDADE = {"Ciclismo": "#C86BC8", "Musculação": "#FFC000", "Vôlei": "#92D050"}
+MES_ABREV = ["jan", "fev", "mar", "abr", "mai",
+             "jun", "jul", "ago", "set", "out", "nov", "dez"]
+COR_ATIVIDADE = {"Ciclismo": "#C86BC8",
+                 "Musculação": "#FFC000", "Vôlei": "#92D050"}
 
 # Logo: balança de banheiro (corpo verde, mostrador branco com ponteiro e pés)
 LOGO_SVG = (
@@ -43,12 +62,34 @@ LOGO_SVG = (
 
 st.set_page_config(page_title="SISACP", page_icon="📉", layout="wide")
 
+# [MELHORIA 2] CSS para celular: título menor e margens enxutas em telas estreitas
+st.markdown("""
+<style>
+@media (max-width: 768px) {
+  .block-container { padding: 1rem 0.8rem 3rem 0.8rem; }
+  h1 { font-size: 1.5rem !important; line-height: 1.25 !important; }
+  h2, h3 { font-size: 1.2rem !important; }
+}
+</style>
+""", unsafe_allow_html=True)
+
+# [MELHORIA 3] Gráficos sem a barra de ícones do Plotly (câmera, zoom...).
+# O hover continua funcionando. Para voltar a barra: displayModeBar -> True
+CONFIG_PLOTLY = {"displayModeBar": False}
+
+
+def mostrar(fig: go.Figure) -> None:
+    st.plotly_chart(fig, width="stretch", config=CONFIG_PLOTLY)
+
+
 # =====================================================================
 # LOGIN - Trava o app com senha
 # A senha verdadeira NÃO fica no código. Ela fica no Secrets.
 # No computador: arquivo .streamlit/secrets.toml
 # Na nuvem: share.streamlit.io > Settings > Secrets
 # =====================================================================
+
+
 def tela_login():
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:0.6rem">{LOGO_SVG}'
@@ -69,6 +110,7 @@ def tela_login():
             st.error("Senha errada. Tente de novo.")
     st.caption("Se você esqueceu a senha, ela está no Secrets do Streamlit ou no arquivo .streamlit/secrets.toml do seu computador.")
     st.stop()
+
 
 if not st.session_state.get("logado"):
     tela_login()
@@ -92,8 +134,10 @@ if not db.banco_existe():
 
     # 2. Opção certa pra você: enviar o controle_peso.db atual do seu computador
     st.markdown("### Envie o seu banco atual (recomendado)")
-    st.caption("Use essa opção, não o Excel. O .db tem tudo que você registrou no Localhost.")
-    db_file = st.file_uploader("controle_peso.db", type=["db", "sqlite", "sqlite3"], key="up_db_inicio")
+    st.caption(
+        "Use essa opção, não o Excel. O .db tem tudo que você registrou no Localhost.")
+    db_file = st.file_uploader("controle_peso.db", type=[
+                               "db", "sqlite", "sqlite3"], key="up_db_inicio")
     if db_file:
         Path(db.ARQUIVO_DB).write_bytes(db_file.getvalue())
         st.success("Banco enviado! Recarregando...")
@@ -101,7 +145,8 @@ if not db.banco_existe():
 
     # 3. Só se você não tiver o .db: criar do zero pelo Excel
     st.markdown("### Ou criar do zero pelo Excel (só se não tiver o .db)")
-    arquivo = st.file_uploader("01 - Controle de Peso_v3.xlsm", type=["xlsm", "xlsx"], key="up_excel_inicio")
+    arquivo = st.file_uploader(
+        "01 - Controle de Peso_v3.xlsm", type=["xlsm", "xlsx"], key="up_excel_inicio")
     if arquivo:
         with st.spinner("Importando seu Excel..."):
             tmp = Path("temp_upload.xlsm")
@@ -116,7 +161,11 @@ if not db.banco_existe():
 
 # =====================================================================
 # Funções de gráfico (cada uma recebe números e devolve uma figura)
+# [MELHORIA 4] Todas ganharam "hovertemplate": o texto que aparece ao
+# passar o mouse (ou tocar, no celular) sobre cada barra/ponto.
 # =====================================================================
+
+
 def fig_nutrientes(consumo: dict, meta: dict) -> go.Figure:
     nomes = ["Calorias", "Proteínas", "Carboidratos", "Gorduras"]
     chaves = ["kcal", "proteinas", "carboidratos", "gorduras"]
@@ -126,19 +175,34 @@ def fig_nutrientes(consumo: dict, meta: dict) -> go.Figure:
     rotulos = [f"<b>{br(p)}%</b><br>{br(consumo[k], 0 if u == 'kcal' else 1)} / "
                f"{br(meta[k], 0 if u == 'kcal' else 1)} {u}"
                for p, k, u in zip(pct, chaves, unidades)]
-    fig = go.Figure(go.Bar(x=nomes, y=pct, marker_color=cores, text=rotulos, textposition="outside"))
+    # texto do hover: consumido, meta, % atingido e quanto falta
+    detalhes = [[br(consumo[k], 0 if u == "kcal" else 1), br(meta[k], 0 if u == "kcal" else 1), u,
+                 br(p), br(max(meta[k] - consumo[k], 0), 0 if u == "kcal" else 1)]
+                for p, k, u in zip(pct, chaves, unidades)]
+    fig = go.Figure(go.Bar(
+        x=nomes, y=pct, marker_color=cores, text=rotulos, textposition="outside",
+        customdata=detalhes,
+        hovertemplate=("<b>%{x}</b><br>Consumido: %{customdata[0]} %{customdata[2]}"
+                       "<br>Meta do dia: %{customdata[1]} %{customdata[2]}"
+                       "<br>Atingido: %{customdata[3]}%"
+                       "<br>Falta: %{customdata[4]} %{customdata[2]}<extra></extra>")))
     fig.add_hline(y=100, line_dash="dash", line_color="#888")
     fig.update_yaxes(range=[0, max(125, max(pct) + 25)], ticksuffix="%")
-    fig.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
+    fig.update_layout(height=320, margin=dict(
+        l=10, r=10, t=10, b=10), showlegend=False)
     return fig
+
 
 def fig_meta_consumo(consumo: float, meta: float, unid: str, cor_c: str, cor_m: str) -> go.Figure:
     fig = go.Figure(go.Bar(
         y=[f"Consumo ({unid})", f"Meta ({unid})"], x=[consumo, meta], orientation="h",
-        marker_color=[cor_c, cor_m], text=[br(consumo, 0), br(meta, 0)], textposition="auto"))
+        marker_color=[cor_c, cor_m], text=[br(consumo, 0), br(meta, 0)], textposition="auto",
+        hovertemplate=f"<b>%{{y}}</b><br>%{{text}} {unid}<extra></extra>"))
     fig.update_yaxes(autorange="reversed")
-    fig.update_layout(height=200, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
+    fig.update_layout(height=200, margin=dict(
+        l=10, r=10, t=10, b=10), showlegend=False)
     return fig
+
 
 def fig_rosca(r: dict) -> go.Figure:
     fig = go.Figure(go.Pie(values=[max(r["reduzido"], 0), max(r["a_perder"], 0)], hole=0.72,
@@ -147,18 +211,21 @@ def fig_rosca(r: dict) -> go.Figure:
     fig.update_layout(
         height=300, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
         annotations=[dict(text=f"<b>{br(r['pct_reduzido'] * 100)}%</b><br>"
-                               f"{br(r['reduzido'])} / {br(r['reducao_necessaria'])} kg",
+                          f"{br(r['reduzido'])} / {br(r['reducao_necessaria'])} kg",
                           x=0.5, y=0.5, showarrow=False, font_size=18)])
     return fig
+
 
 def fig_peso_imc(df, meta_kg: float) -> go.Figure:
     rotulos = [f"{d[8:10]}/{d[5:7]}" for d in df["data"]]
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_bar(x=rotulos, y=df["peso_kg"], name="Peso (kg)", marker_color="#FFB066",
-                text=[br(p) for p in df["peso_kg"]], textposition="outside", secondary_y=False)
+                text=[br(p) for p in df["peso_kg"]], textposition="outside", secondary_y=False,
+                hovertemplate="<b>Pesagem de %{x}</b><br>Peso: %{text} kg<extra></extra>")
     fig.add_scatter(x=rotulos, y=df["imc"], name="IMC (kg/m²)", mode="lines+markers+text",
                     line_color="#4A90D9", text=[br(i) for i in df["imc"]],
-                    textposition="top center", secondary_y=True)
+                    textposition="top center", secondary_y=True,
+                    hovertemplate="<b>IMC em %{x}</b><br>%{text} kg/m²<extra></extra>")
     baixo = math.floor((min(meta_kg, df["peso_kg"].min()) - 1) / 10) * 10
     cima = math.ceil(df["peso_kg"].max() / 10) * 10
     fig.update_yaxes(range=[baixo, cima], title_text="kg", secondary_y=False)
@@ -170,13 +237,15 @@ def fig_peso_imc(df, meta_kg: float) -> go.Figure:
                       legend=dict(orientation="h", y=1.12))
     return fig
 
+
 def fig_faixa_imc(r: dict) -> go.Figure:
     zonas = [(15, 18.5, "Abaixo do Peso", "#FFE600"), (18.5, 25, "Normal", "#3FBF5A"),
              (25, 30, "Sobrepeso", "#F4A6A0"), (30, 35, "Obesidade G1", "#F08A4B"),
              (35, 40, "Obesidade G2", "#E8604C"), (40, 45, "Obesidade G3", "#E00000")]
     fig = go.Figure()
     for x0, x1, nome, cor in zonas:
-        fig.add_shape(type="rect", x0=x0, x1=x1, y0=0, y1=1, fillcolor=cor, line_width=0, layer="below")
+        fig.add_shape(type="rect", x0=x0, x1=x1, y0=0, y1=1,
+                      fillcolor=cor, line_width=0, layer="below")
         fig.add_annotation(x=(x0 + x1) / 2, y=1.1, text=f"<b>{nome}</b>", showarrow=False,
                            font=dict(size=12, color="#000000"))
     marcadores = [("IMC atual", r["imc_atual"], 0.7, "#2F80ED"),
@@ -185,12 +254,16 @@ def fig_faixa_imc(r: dict) -> go.Figure:
     for nome, valor, y, cor in marcadores:
         fig.add_trace(go.Scatter(x=[valor], y=[y], mode="markers", name=f"{nome}: {br(valor)}",
                                  marker=dict(symbol="circle-cross", size=20, color=cor,
-                                             line=dict(color="black", width=2))))
-    fig.update_xaxes(range=[15, 45], tickvals=[18.5, 25, 30, 35, 40], showgrid=False)
+                                             line=dict(color="black", width=2)),
+                                 hovertemplate=f"<b>{nome}</b>: {br(valor)} kg/m²"
+                                 f"<br>{calc.classificar_imc(valor)}<extra></extra>"))
+    fig.update_xaxes(range=[15, 45], tickvals=[
+                     18.5, 25, 30, 35, 40], showgrid=False)
     fig.update_yaxes(visible=False, range=[0, 1.2])
     fig.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=100),
                       legend=dict(orientation="h", y=-0.3), plot_bgcolor="white")
     return fig
+
 
 def fig_atividades(df) -> go.Figure:
     fig = go.Figure()
@@ -200,38 +273,83 @@ def fig_atividades(df) -> go.Figure:
         sub = df[df["atividade"] == atividade].set_index("mes")
         fig.add_bar(x=rotulos, y=[int(sub["qtde"].get(m, 0)) for m in meses], name=atividade,
                     marker_color=COR_ATIVIDADE.get(atividade), text=[int(sub["qtde"].get(m, 0)) or "" for m in meses],
-                    textposition="outside")
+                    textposition="outside",
+                    customdata=[int(sub["minutos"].get(m, 0)) for m in meses],
+                    hovertemplate=("<b>%{fullData.name}</b> — %{x}<br>%{y} sessão(ões)"
+                                   "<br>%{customdata} min no total<extra></extra>"))
     fig.update_layout(barmode="group", height=320, margin=dict(l=10, r=10, t=50, b=10),
                       legend=dict(orientation="h", y=1.12), yaxis_title="Sessões")
     return fig
 
+
 def fig_por_refeicao(df) -> go.Figure:
     fig = go.Figure()
     fig.add_bar(x=df["refeicao"], y=df["consumo_kcal"], name="Consumo (kcal)", marker_color="#00B050",
-                text=[br(v, 0) for v in df["consumo_kcal"]], textposition="outside")
+                text=[br(v, 0) for v in df["consumo_kcal"]], textposition="outside",
+                hovertemplate="<b>%{x}</b><br>Consumo: %{text} kcal<extra></extra>")
     fig.add_bar(x=df["refeicao"], y=df["meta_kcal"], name="Meta (kcal)", marker_color="#C9D9C9",
-                text=[br(v, 0) for v in df["meta_kcal"]], textposition="outside")
+                text=[br(v, 0) for v in df["meta_kcal"]], textposition="outside",
+                hovertemplate="<b>%{x}</b><br>Meta: %{text} kcal<extra></extra>")
     topo = max(df["consumo_kcal"].max(), df["meta_kcal"].max())
     fig.update_yaxes(range=[0, topo * 1.15])
     fig.update_layout(barmode="group", height=320, margin=dict(l=10, r=10, t=50, b=10),
                       legend=dict(orientation="h", y=1.12))
     return fig
 
+
+# =====================================================================
+# [MELHORIA 5] Componentes com JavaScript
+# =====================================================================
+@st.fragment(run_every="30s")
+def relogio() -> None:
+    """Atualiza SOZINHO a cada 30 s (só este trecho roda de novo, não a página toda)."""
+    agora = agora_br()
+    st.markdown(f"#### {DIAS_SEMANA[agora.weekday()]}, {agora.day} de {MESES[agora.month - 1]} "
+                f"de {agora.year} — {agora:%H:%M}")
+
+
+def kpi_animado(rotulo: str, valor_pct: float, chave: str) -> None:
+    """Percentual grande que 'conta' de 0 até o valor ao abrir o painel (JavaScript).
+    O texto já nasce com o valor final: se o JavaScript falhar, o número aparece igual."""
+    st.html(f"""
+<div style="font-size:0.875rem;opacity:0.75">{rotulo}</div>
+<div id="kpi-{chave}" style="font-size:2.25rem;line-height:1.3">{br(valor_pct)}%</div>
+<script>
+(function () {{
+  const el = document.getElementById("kpi-{chave}");
+  if (!el) return;
+  const alvo = {valor_pct:.4f}, duracao = 900, t0 = performance.now();
+  const fmt = v => v.toLocaleString("pt-BR", {{minimumFractionDigits: 1, maximumFractionDigits: 1}}) + "%";
+  function passo(t) {{
+    const p = Math.min((t - t0) / duracao, 1);
+    el.textContent = fmt(alvo * (1 - Math.pow(1 - p, 3)));   // desacelera no final
+    if (p < 1) requestAnimationFrame(passo);
+  }}
+  requestAnimationFrame(passo);
+}})();
+</script>
+""", unsafe_allow_javascript=True)
+
+
 # =====================================================================
 # PÁGINA: PAINEL (substitui a aba PRINCIPAL)
 # =====================================================================
+
+
 def pagina_painel() -> None:
-    agora = datetime.now()
+    agora = agora_br()
     topo, seletor = st.columns([3, 1])
     topo.title("SISACP - Sistema de Acompanhamento e Controle de Peso")
-    topo.markdown(f"#### {DIAS_SEMANA[agora.weekday()]}, {agora.day} de {MESES[agora.month - 1]} "
-                  f"de {agora.year} — {agora:%H:%M}")
-    dia = seletor.date_input("Dia analisado ('Do dia?')", value=agora.date(), format="DD/MM/YYYY")
+    with topo:
+        relogio()
+    dia = seletor.date_input("Dia analisado ('Do dia?')",
+                             value=agora.date(), format="DD/MM/YYYY")
     ultimo = calc.ultimo_dia_com_registro()
     if ultimo:
-        seletor.caption(f"Último dia com alimentação/água registradas: {ultimo:%d/%m/%Y}")
+        seletor.caption(
+            f"Último dia com alimentação/água registradas: {ultimo:%d/%m/%Y}")
 
-    r = calc.resumo_peso(date.today())
+    r = calc.resumo_peso(hoje_br())
     if r is None:
         st.warning("Ainda não há pesagens registradas.")
     else:
@@ -249,11 +367,11 @@ def pagina_painel() -> None:
                 f"**Média de perda:** {br(r['media_kg_dia'], 3)} kg/dia")
         with d2:
             st.subheader("Redução de peso")
-            st.plotly_chart(fig_rosca(r), width="stretch")
+            mostrar(fig_rosca(r))
             st.caption(f"À perder: {br(r['a_perder'])} kg")
         with d3:
             st.subheader("Evolução peso & IMC")
-            st.plotly_chart(fig_peso_imc(calc.evolucao_peso(), r["peso_meta"]), width="stretch")
+            mostrar(fig_peso_imc(calc.evolucao_peso(), r["peso_meta"]))
 
     st.divider()
 
@@ -267,19 +385,20 @@ def pagina_painel() -> None:
     c1, c2, c3 = st.columns([1.2, 1, 1])
     with c1:
         st.subheader("Consumo de nutrientes (do dia)")
-        st.plotly_chart(fig_nutrientes(consumo, meta), width="stretch")
+        mostrar(fig_nutrientes(consumo, meta))
     with c2:
         st.subheader("Calorias até a última refeição")
-        st.metric("Evolução", f"{br(kcal_c / kcal_m * 100 if kcal_m else 0)}%")
-        st.plotly_chart(fig_meta_consumo(kcal_c, kcal_m, "kcal", "#92D050", "#548235"), width="stretch")
+        kpi_animado("Evolução", kcal_c / kcal_m * 100 if kcal_m else 0, "kcal")
+        mostrar(fig_meta_consumo(kcal_c, kcal_m, "kcal", "#92D050", "#548235"))
     with c3:
         st.subheader("Água (do dia)")
-        st.metric("Evolução", f"{br(ml / meta_ml * 100 if meta_ml else 0)}%")
-        st.plotly_chart(fig_meta_consumo(ml, meta_ml, "ml", "#7EC8E3", "#2E86C1"), width="stretch")
+        kpi_animado("Evolução", ml / meta_ml * 100 if meta_ml else 0, "agua")
+        mostrar(fig_meta_consumo(ml, meta_ml, "ml", "#7EC8E3", "#2E86C1"))
 
     if r is not None:
-        st.subheader(f"Índice de massa corporal — {calc.classificar_imc(r['imc_atual'])}")
-        st.plotly_chart(fig_faixa_imc(r), width="stretch")
+        st.subheader(
+            f"Índice de massa corporal — {calc.classificar_imc(r['imc_atual'])}")
+        mostrar(fig_faixa_imc(r))
 
     st.divider()
 
@@ -290,43 +409,53 @@ def pagina_painel() -> None:
         if atv.empty:
             st.caption("Sem atividades registradas.")
         else:
-            st.plotly_chart(fig_atividades(atv), width="stretch")
+            mostrar(fig_atividades(atv))
     with e2:
         st.subheader(f"Calorias por refeição — {dia:%d/%m/%Y}")
-        st.plotly_chart(fig_por_refeicao(calc.consumo_por_refeicao(dia)), width="stretch")
+        mostrar(fig_por_refeicao(calc.consumo_por_refeicao(dia)))
 
 # =====================================================================
 # PÁGINA: REGISTRAR (substitui "Coletas dos Dados" + as macros VBA)
 # =====================================================================
+
+
 def lista_com_exclusao(tabela: str, sql: str, chave: str) -> None:
     df = db.consulta(sql)
     st.dataframe(df, hide_index=True, width="stretch")
     if not df.empty:
         with st.expander("🗑️ Excluir um registro"):
-            id_ = st.selectbox("ID do registro", df["id"].tolist(), key=f"sel_{chave}")
+            id_ = st.selectbox(
+                "ID do registro", df["id"].tolist(), key=f"sel_{chave}")
             if st.button("Excluir", key=f"del_{chave}"):
                 db.executa(f"DELETE FROM {tabela} WHERE id = ?", (int(id_),))
                 st.rerun()
 
+
 def pagina_registrar() -> None:
     st.title("Registrar dados")
-    agora = datetime.now()
+    agora = agora_br()
     aba_peso, aba_agua, aba_ativ, aba_alim = st.tabs(
         ["📉 Peso", "💧 Hidratação", "🏃 Atividade física", "🍽️ Alimentação"])
 
     with aba_peso:
         ultimo = calc.evolucao_peso()
-        padrao = float(ultimo["peso_kg"].iloc[-1]) if not ultimo.empty else 80.0
+        padrao = float(ultimo["peso_kg"].iloc[-1]
+                       ) if not ultimo.empty else 80.0
         c1, c2 = st.columns(2)
-        data = c1.date_input("Data", value=agora.date(), format="DD/MM/YYYY", key="peso_data")
-        peso = c2.number_input("Peso (kg)", 30.0, 400.0, padrao, step=0.1, format="%.1f", key="peso_kg")
+        data = c1.date_input("Data", value=agora.date(),
+                             format="DD/MM/YYYY", key="peso_data")
+        peso = c2.number_input("Peso (kg)", 30.0, 400.0,
+                               padrao, step=0.1, format="%.1f", key="peso_kg")
         altura = calc.perfil()["altura_m"]
-        st.caption(f"IMC com este peso: {br(calc.imc(peso, altura))} — {calc.classificar_imc(calc.imc(peso, altura))}")
+        st.caption(
+            f"IMC com este peso: {br(calc.imc(peso, altura))} — {calc.classificar_imc(calc.imc(peso, altura))}")
         if st.button("Registrar peso", type="primary"):
-            db.executa("INSERT INTO pesagem (data, peso_kg) VALUES (?, ?)", (data.isoformat(), peso))
+            db.executa(
+                "INSERT INTO pesagem (data, peso_kg) VALUES (?, ?)", (data.isoformat(), peso))
             st.success("Peso registrado.")
         st.markdown("**Últimas pesagens**")
-        lista_com_exclusao("pesagem", "SELECT id, data, peso_kg, imc FROM vw_pesagem ORDER BY data DESC LIMIT 15", "peso")
+        lista_com_exclusao(
+            "pesagem", "SELECT id, data, peso_kg, imc FROM vw_pesagem ORDER BY data DESC LIMIT 15", "peso")
 
     with aba_agua:
         st.markdown("**Registro rápido (agora)**")
@@ -338,31 +467,42 @@ def pagina_registrar() -> None:
                 st.success(f"{ml} ml registrados.")
         st.markdown("**Registro manual**")
         c1, c2, c3 = st.columns(3)
-        data = c1.date_input("Data", value=agora.date(), format="DD/MM/YYYY", key="agua_data")
-        hora = c2.time_input("Hora", value=agora.time().replace(second=0, microsecond=0), key="agua_hora")
-        volume = c3.number_input("Quantidade (ml)", 50, 5000, 300, step=50, key="agua_ml")
+        data = c1.date_input("Data", value=agora.date(),
+                             format="DD/MM/YYYY", key="agua_data")
+        hora = c2.time_input("Hora", value=agora.time().replace(
+            second=0, microsecond=0), key="agua_hora")
+        volume = c3.number_input(
+            "Quantidade (ml)", 50, 5000, 300, step=50, key="agua_ml")
         if st.button("Registrar água", type="primary"):
             db.executa("INSERT INTO hidratacao (data, hora, volume_ml) VALUES (?,?,?)",
                        (data.isoformat(), hora.strftime("%H:%M"), int(volume)))
             st.success("Hidratação registrada.")
         total, meta = calc.agua_do_dia(agora.date())
-        st.progress(min(total / meta, 1.0) if meta else 0.0, text=f"Hoje: {br(total, 0)} / {br(meta, 0)} ml")
+        st.progress(min(total / meta, 1.0) if meta else 0.0,
+                    text=f"Hoje: {br(total, 0)} / {br(meta, 0)} ml")
         lista_com_exclusao("hidratacao", "SELECT id, data, hora, volume_ml FROM hidratacao "
                                          "ORDER BY data DESC, hora DESC LIMIT 15", "agua")
 
     with aba_ativ:
-        tipos = db.consulta("SELECT DISTINCT atividade FROM atividade_fisica ORDER BY 1")["atividade"].tolist()
-        tipos = tipos + [t for t in ["Caminhada", "Corrida", "Natação"] if t not in tipos] + ["Outra..."]
+        tipos = db.consulta("SELECT DISTINCT atividade FROM atividade_fisica ORDER BY 1")[
+            "atividade"].tolist()
+        tipos = tipos + [t for t in ["Caminhada", "Corrida",
+                                     "Natação"] if t not in tipos] + ["Outra..."]
         c1, c2, c3, c4 = st.columns(4)
-        data = c1.date_input("Data", value=agora.date(), format="DD/MM/YYYY", key="ativ_data")
+        data = c1.date_input("Data", value=agora.date(),
+                             format="DD/MM/YYYY", key="ativ_data")
         tipo = c2.selectbox("Atividade", tipos, key="ativ_tipo")
-        hora = c3.time_input("Hora de início", value=agora.time().replace(second=0, microsecond=0), key="ativ_hora")
-        dur = c4.number_input("Duração (min)", 5, 600, 60, step=5, key="ativ_dur")
+        hora = c3.time_input("Hora de início", value=agora.time().replace(
+            second=0, microsecond=0), key="ativ_hora")
+        dur = c4.number_input("Duração (min)", 5, 600,
+                              60, step=5, key="ativ_dur")
         if tipo == "Outra...":
             tipo = st.text_input("Nome da atividade", key="ativ_outra").strip()
         k1, k2 = st.columns(2)
-        kcal = k1.number_input("Calorias gastas (opcional, 0 = não informar)", 0.0, 5000.0, 0.0, step=10.0, key="ativ_kcal")
-        km = k2.number_input("Distância em km (opcional, 0 = não informar)", 0.0, 500.0, 0.0, step=0.5, key="ativ_km")
+        kcal = k1.number_input("Calorias gastas (opcional, 0 = não informar)",
+                               0.0, 5000.0, 0.0, step=10.0, key="ativ_kcal")
+        km = k2.number_input("Distância em km (opcional, 0 = não informar)",
+                             0.0, 500.0, 0.0, step=0.5, key="ativ_km")
         if st.button("Registrar atividade", type="primary"):
             if not tipo:
                 st.error("Informe o nome da atividade.")
@@ -377,18 +517,25 @@ def pagina_registrar() -> None:
     with aba_alim:
         metas = calc.metas_refeicao()
         c1, c2, c3 = st.columns(3)
-        data = c1.date_input("Data", value=agora.date(), format="DD/MM/YYYY", key="al_data")
-        hora = c2.time_input("Hora", value=agora.time().replace(second=0, microsecond=0), key="al_hora")
-        refeicao = c3.selectbox("Refeição", metas["refeicao"].tolist(), key="al_ref")
-        subst = st.checkbox("Alimento substituto (item de outra refeição)", key="al_subst")
+        data = c1.date_input("Data", value=agora.date(),
+                             format="DD/MM/YYYY", key="al_data")
+        hora = c2.time_input("Hora", value=agora.time().replace(
+            second=0, microsecond=0), key="al_hora")
+        refeicao = c3.selectbox(
+            "Refeição", metas["refeicao"].tolist(), key="al_ref")
+        subst = st.checkbox(
+            "Alimento substituto (item de outra refeição)", key="al_subst")
 
         if subst:
-            itens = db.consulta("SELECT * FROM item_plano ORDER BY refeicao, cod_item")
+            itens = db.consulta(
+                "SELECT * FROM item_plano ORDER BY refeicao, cod_item")
         else:
-            itens = db.consulta("SELECT * FROM item_plano WHERE refeicao = ? ORDER BY cod_item", (refeicao,))
+            itens = db.consulta(
+                "SELECT * FROM item_plano WHERE refeicao = ? ORDER BY cod_item", (refeicao,))
         rotulo = {str(int(r.id)): f"{r.cod_item} | {r.descricao} — {br(r.peso_g, 0)} g, {br(r.kcal, 0)} kcal"
-                                              + (f"  [{r.refeicao}]" if subst else "") for r in itens.itertuples()}
-        escolhidos = st.multiselect("Itens consumidos", list(rotulo), format_func=rotulo.get, key=f"al_itens_{subst}_{refeicao}")
+                  + (f"  [{r.refeicao}]" if subst else "") for r in itens.itertuples()}
+        escolhidos = st.multiselect("Itens consumidos", list(
+            rotulo), format_func=rotulo.get, key=f"al_itens_{subst}_{refeicao}")
         porcoes = st.number_input("Porções (vale para todos os itens marcados; 0,5 = metade)",
                                   0.25, 10.0, 1.0, step=0.25, key="al_porcoes")
         if escolhidos:
@@ -403,16 +550,20 @@ def pagina_registrar() -> None:
                 db.executa("INSERT INTO consumo (data, hora, refeicao, item_plano_id, substituto, porcoes)"
                            " VALUES (?,?,?,?,?,?)",
                            (data.isoformat(), hora.strftime("%H:%M"), refeicao, int(item_id), int(subst), porcoes))
-            st.success(f"{len(escolhidos)} item(ns) registrado(s) em {refeicao}.")
+            st.success(
+                f"{len(escolhidos)} item(ns) registrado(s) em {refeicao}.")
         lista_com_exclusao("consumo", "SELECT id, data, hora, refeicao, descricao, ROUND(kcal,0) AS kcal "
                                       "FROM vw_consumo ORDER BY data DESC, hora DESC, id DESC LIMIT 20", "al")
 
 # =====================================================================
 # PÁGINA: PLANO ALIMENTAR (Cardápio + itens + metas)
 # =====================================================================
+
+
 def pagina_plano() -> None:
     st.title("Plano alimentar")
-    aba_card, aba_itens, aba_metas = st.tabs(["Cardápio prescrito", "Itens para registro", "Metas por refeição"])
+    aba_card, aba_itens, aba_metas = st.tabs(
+        ["Cardápio prescrito", "Itens para registro", "Metas por refeição"])
     metas = calc.metas_refeicao()
 
     with aba_card:
@@ -430,7 +581,8 @@ def pagina_plano() -> None:
                                  .rename(columns={"descricao": "Item", "peso_g": "Peso (g/ml)", "kcal": "kcal",
                                                   "proteinas_g": "Prot (g)", "carboidratos_g": "Carb (g)",
                                                   "gorduras_g": "Gord (g)"}), hide_index=True, width="stretch")
-                    st.caption(f"Total: {br(sub['kcal'].sum(), 0)} kcal (meta da refeição: {br(m.kcal, 0)} kcal)")
+                    st.caption(
+                        f"Total: {br(sub['kcal'].sum(), 0)} kcal (meta da refeição: {br(m.kcal, 0)} kcal)")
 
     with aba_itens:
         itens = db.consulta("SELECT cod_item AS cod, refeicao, descricao, peso_g, kcal, proteinas_g, "
@@ -438,19 +590,25 @@ def pagina_plano() -> None:
         st.dataframe(itens, hide_index=True, width="stretch")
         with st.expander("➕ Cadastrar novo item"):
             a, b = st.columns(2)
-            ref = a.selectbox("Refeição", metas["refeicao"].tolist(), key="ni_ref")
+            ref = a.selectbox(
+                "Refeição", metas["refeicao"].tolist(), key="ni_ref")
             desc = b.text_input("Descrição", key="ni_desc")
             n = st.columns(5)
-            peso = n[0].number_input("Peso (g/ml)", 0.0, 5000.0, 100.0, key="ni_peso")
+            peso = n[0].number_input(
+                "Peso (g/ml)", 0.0, 5000.0, 100.0, key="ni_peso")
             kc = n[1].number_input("kcal", 0.0, 5000.0, 0.0, key="ni_kcal")
-            pr = n[2].number_input("Proteínas (g)", 0.0, 500.0, 0.0, key="ni_p")
-            ca = n[3].number_input("Carboidratos (g)", 0.0, 1000.0, 0.0, key="ni_c")
-            go_ = n[4].number_input("Gorduras (g)", 0.0, 500.0, 0.0, key="ni_g")
+            pr = n[2].number_input("Proteínas (g)", 0.0,
+                                   500.0, 0.0, key="ni_p")
+            ca = n[3].number_input(
+                "Carboidratos (g)", 0.0, 1000.0, 0.0, key="ni_c")
+            go_ = n[4].number_input(
+                "Gorduras (g)", 0.0, 500.0, 0.0, key="ni_g")
             if st.button("Salvar item"):
                 if not desc.strip():
                     st.error("Informe a descrição.")
                 else:
-                    prox = int(db.consulta("SELECT COALESCE(MAX(cod_item),0)+1 AS n FROM item_plano")["n"].iloc[0])
+                    prox = int(db.consulta(
+                        "SELECT COALESCE(MAX(cod_item),0)+1 AS n FROM item_plano")["n"].iloc[0])
                     db.executa("INSERT INTO item_plano (refeicao, cod_item, descricao, peso_g, kcal, proteinas_g,"
                                " carboidratos_g, gorduras_g) VALUES (?,?,?,?,?,?,?,?)",
                                (ref, prox, desc.strip(), peso, kc, pr, ca, go_))
@@ -458,9 +616,11 @@ def pagina_plano() -> None:
                     st.rerun()
 
     with aba_metas:
-        st.caption("Edite os valores na tabela e clique em salvar. A meta do dia é a soma das refeições.")
+        st.caption(
+            "Edite os valores na tabela e clique em salvar. A meta do dia é a soma das refeições.")
         editado = st.data_editor(
-            metas[["refeicao", "horario", "kcal", "proteinas_g", "carboidratos_g", "gorduras_g"]],
+            metas[["refeicao", "horario", "kcal",
+                   "proteinas_g", "carboidratos_g", "gorduras_g"]],
             hide_index=True, width="stretch", disabled=["refeicao"], key="editor_metas")
         if st.button("Salvar metas", type="primary"):
             for r in editado.itertuples():
@@ -475,25 +635,32 @@ def pagina_plano() -> None:
 # =====================================================================
 # PÁGINA: MEDICAMENTOS
 # =====================================================================
+
+
 def pagina_medicamentos() -> None:
     st.title("Medicamentos prescritos")
     df = db.consulta("SELECT id, nome, posologia, uso, data_inicio, data_alteracao, preco, qtde,"
                      " ROUND(preco * qtde, 2) AS custo FROM medicamento ORDER BY nome")
-    hoje = date.today()
+    hoje = hoje_br()
     df["falta_alterar_dias"] = [
         (date.fromisoformat(d) - hoje).days if isinstance(d, str) else None for d in df["data_alteracao"]]
     st.dataframe(df, hide_index=True, width="stretch")
-    st.metric("Custo total (preço × quantidade)", f"R$ {br(df['custo'].sum(), 2)}")
+    st.metric("Custo total (preço × quantidade)",
+              f"R$ {br(df['custo'].sum(), 2)}")
     with st.expander("➕ Cadastrar medicamento"):
         a, b = st.columns(2)
         nome = a.text_input("Medicamento", key="md_nome")
-        uso = b.selectbox("Uso", ["Contínuo", "Pontual", "Com prazo"], key="md_uso")
+        uso = b.selectbox(
+            "Uso", ["Contínuo", "Pontual", "Com prazo"], key="md_uso")
         pos = st.text_area("Posologia", key="md_pos")
         c = st.columns(4)
-        preco = c[0].number_input("Preço (R$)", 0.0, 100000.0, 0.0, key="md_preco")
+        preco = c[0].number_input(
+            "Preço (R$)", 0.0, 100000.0, 0.0, key="md_preco")
         qtde = c[1].number_input("Qtde.", 1, 100, 1, key="md_qtde")
-        ini = c[2].date_input("Início", value=None, format="DD/MM/YYYY", key="md_ini")
-        alt = c[3].date_input("Data de alteração", value=None, format="DD/MM/YYYY", key="md_alt")
+        ini = c[2].date_input("Início", value=None,
+                              format="DD/MM/YYYY", key="md_ini")
+        alt = c[3].date_input("Data de alteração", value=None,
+                              format="DD/MM/YYYY", key="md_alt")
         if st.button("Salvar medicamento"):
             if not nome.strip():
                 st.error("Informe o nome.")
@@ -507,6 +674,8 @@ def pagina_medicamentos() -> None:
 # =====================================================================
 # PÁGINA: PERFIL
 # =====================================================================
+
+
 def pagina_perfil() -> None:
     st.title("Perfil e metas gerais")
     p = calc.perfil()
@@ -515,11 +684,14 @@ def pagina_perfil() -> None:
     nasc = b.date_input("Data de nascimento", value=date.fromisoformat(p["data_nascimento"]),
                         min_value=date(1900, 1, 1), format="DD/MM/YYYY")
     c = st.columns(4)
-    altura = c[0].number_input("Altura (m)", 1.0, 2.5, float(p["altura_m"]), step=0.01)
-    meta = c[1].number_input("Meta de peso (kg)", 30.0, 300.0, float(p["peso_meta_kg"]), step=0.5)
+    altura = c[0].number_input(
+        "Altura (m)", 1.0, 2.5, float(p["altura_m"]), step=0.01)
+    meta = c[1].number_input("Meta de peso (kg)", 30.0,
+                             300.0, float(p["peso_meta_kg"]), step=0.5)
     inicio = c[2].date_input("Início do acompanhamento", value=date.fromisoformat(p["data_inicio_acomp"]),
                              format="DD/MM/YYYY")
-    agua = c[3].number_input("Meta de água (ml/dia)", 500, 10000, int(p["meta_agua_ml"]), step=100)
+    agua = c[3].number_input("Meta de água (ml/dia)",
+                             500, 10000, int(p["meta_agua_ml"]), step=100)
     if st.button("Salvar perfil", type="primary"):
         db.executa("UPDATE perfil SET nome=?, data_nascimento=?, altura_m=?, peso_meta_kg=?,"
                    " data_inicio_acomp=?, meta_agua_ml=? WHERE id=1",
@@ -529,6 +701,8 @@ def pagina_perfil() -> None:
 # =====================================================================
 # PÁGINA: SINCRONIZAR (Localhost <-> Nuvem)
 # =====================================================================
+
+
 def pagina_sincronizar() -> None:
     st.title("Sincronizar")
     st.markdown("O banco no computador e o banco na nuvem são arquivos separados. "
@@ -536,7 +710,8 @@ def pagina_sincronizar() -> None:
 
     st.subheader("⬆️ Localhost → Nuvem")
     st.markdown("Você registrou no computador e quer ver no celular:")
-    up = st.file_uploader("Escolha o controle_peso.db do seu computador", type=["db", "sqlite", "sqlite3"], key="sync_up")
+    up = st.file_uploader("Escolha o controle_peso.db do seu computador", type=[
+                          "db", "sqlite", "sqlite3"], key="sync_up")
     if up:
         if st.button("Enviar para a nuvem", type="primary"):
             Path(db.ARQUIVO_DB).write_bytes(up.getvalue())
@@ -549,10 +724,13 @@ def pagina_sincronizar() -> None:
     st.markdown("Você registrou pelo celular e quer trazer pro computador:")
     if db.banco_existe():
         dados = Path(db.ARQUIVO_DB).read_bytes()
-        st.download_button("Baixar banco da nuvem", data=dados, file_name="controle_peso.db")
-        st.caption("Depois salve por cima do controle_peso.db que está na pasta do projeto e feche e abra de novo o localhost:8501")
+        st.download_button("Baixar banco da nuvem",
+                           data=dados, file_name="controle_peso.db")
+        st.caption(
+            "Depois salve por cima do controle_peso.db que está na pasta do projeto e feche e abra de novo o localhost:8501")
     else:
         st.warning("Ainda não há banco na nuvem.")
+
 
 # =====================================================================
 # NAVEGAÇÃO
@@ -572,5 +750,6 @@ st.sidebar.markdown(
 if st.sidebar.button("🚪 Sair"):
     st.session_state["logado"] = False
     st.rerun()
-escolha = st.sidebar.radio("Navegação", list(PAGINAS), label_visibility="collapsed")
+escolha = st.sidebar.radio("Navegação", list(
+    PAGINAS), label_visibility="collapsed")
 PAGINAS[escolha]()
