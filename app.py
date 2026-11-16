@@ -79,6 +79,7 @@ CONFIG_PLOTLY = {"displayModeBar": False}
 
 
 def mostrar(fig: go.Figure) -> None:
+    # Zoom liberado. Para voltar à visão total: dois toques (ou duplo clique) no gráfico.
     st.plotly_chart(fig, width="stretch", config=CONFIG_PLOTLY)
 
 
@@ -198,9 +199,12 @@ def fig_meta_consumo(consumo: float, meta: float, unid: str, cor_c: str, cor_m: 
         y=[f"Consumo ({unid})", f"Meta ({unid})"], x=[consumo, meta], orientation="h",
         marker_color=[cor_c, cor_m], text=[br(consumo, 0), br(meta, 0)], textposition="auto",
         hovertemplate=f"<b>%{{y}}</b><br>%{{text}} {unid}<extra></extra>"))
-    fig.update_yaxes(autorange="reversed")
+    # margem esquerda FIXA e escala até a maior barra: os dois gráficos (calorias e
+    # água) ficam com a mesma área útil e as barras de meta terminam no mesmo ponto
+    fig.update_xaxes(range=[0, (max(consumo, meta) or 1) * 1.05])
+    fig.update_yaxes(autorange="reversed", automargin=False)
     fig.update_layout(height=200, margin=dict(
-        l=10, r=10, t=10, b=10), showlegend=False)
+        l=110, r=10, t=10, b=10), showlegend=False)
     return fig
 
 
@@ -256,7 +260,7 @@ def fig_faixa_imc(r: dict) -> go.Figure:
                                  marker=dict(symbol="circle-cross", size=20, color=cor,
                                              line=dict(color="black", width=2)),
                                  hovertemplate=f"<b>{nome}</b>: {br(valor)} kg/m²"
-                                 f"<br>{calc.classificar_imc(valor)}<extra></extra>"))
+                                               f"<br>{calc.classificar_imc(valor)}<extra></extra>"))
     fig.update_xaxes(range=[15, 45], tickvals=[
                      18.5, 25, 30, 35, 40], showgrid=False)
     fig.update_yaxes(visible=False, range=[0, 1.2])
@@ -387,11 +391,13 @@ def pagina_painel() -> None:
         st.subheader("Consumo de nutrientes (do dia)")
         mostrar(fig_nutrientes(consumo, meta))
     with c2:
-        st.subheader("Calorias até a última refeição")
+        st.subheader("Calorias")
+        st.caption("Até a última refeição")
         kpi_animado("Evolução", kcal_c / kcal_m * 100 if kcal_m else 0, "kcal")
         mostrar(fig_meta_consumo(kcal_c, kcal_m, "kcal", "#92D050", "#548235"))
     with c3:
-        st.subheader("Água (do dia)")
+        st.subheader("Água")
+        st.caption("Do dia")
         kpi_animado("Evolução", ml / meta_ml * 100 if meta_ml else 0, "agua")
         mostrar(fig_meta_consumo(ml, meta_ml, "ml", "#7EC8E3", "#2E86C1"))
 
