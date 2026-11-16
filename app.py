@@ -176,20 +176,26 @@ def fig_nutrientes(consumo: dict, meta: dict) -> go.Figure:
     rotulos = [f"<b>{br(p)}%</b><br>{br(consumo[k], 0 if u == 'kcal' else 1)} / "
                f"{br(meta[k], 0 if u == 'kcal' else 1)} {u}"
                for p, k, u in zip(pct, chaves, unidades)]
-    # texto do hover: consumido, meta, % atingido e quanto falta
     detalhes = [[br(consumo[k], 0 if u == "kcal" else 1), br(meta[k], 0 if u == "kcal" else 1), u,
                  br(p), br(max(meta[k] - consumo[k], 0), 0 if u == "kcal" else 1)]
                 for p, k, u in zip(pct, chaves, unidades)]
     fig = go.Figure(go.Bar(
         x=nomes, y=pct, marker_color=cores, text=rotulos, textposition="outside",
+        textfont=dict(size=18),  # <-- número em cima da barra: 63,7% etc.
         customdata=detalhes,
         hovertemplate=("<b>%{x}</b><br>Consumido: %{customdata[0]} %{customdata[2]}"
                        "<br>Meta do dia: %{customdata[1]} %{customdata[2]}"
                        "<br>Atingido: %{customdata[3]}%"
                        "<br>Falta: %{customdata[4]} %{customdata[2]}<extra></extra>")))
     fig.add_hline(y=100, line_dash="dash", line_color="#888")
-    fig.update_yaxes(range=[0, max(125, max(pct) + 25)], ticksuffix="%")
-    fig.update_layout(height=320, margin=dict(
+    fig.update_yaxes(
+        range=[0, max(125, max(pct) + 25)], ticksuffix="%",
+        tickfont=dict(size=15)  # <-- % do lado esquerdo: 0%, 20%...
+    )
+    fig.update_xaxes(
+        tickfont=dict(size=16)  # <-- nomes embaixo: Calorias, Proteínas...
+    )
+    fig.update_layout(height=360, margin=dict(
         l=10, r=10, t=10, b=10), showlegend=False)
     return fig
 
@@ -198,11 +204,17 @@ def fig_meta_consumo(consumo: float, meta: float, unid: str, cor_c: str, cor_m: 
     fig = go.Figure(go.Bar(
         y=[f"Consumo ({unid})", f"Meta ({unid})"], x=[consumo, meta], orientation="h",
         marker_color=[cor_c, cor_m], text=[br(consumo, 0), br(meta, 0)], textposition="auto",
+        # <-- número dentro da barra: 599 / 643
+        textfont=dict(size=18, color="white"),
         hovertemplate=f"<b>%{{y}}</b><br>%{{text}} {unid}<extra></extra>"))
-    # margem esquerda FIXA e escala até a maior barra: os dois gráficos (calorias e
-    # água) ficam com a mesma área útil e as barras de meta terminam no mesmo ponto
-    fig.update_xaxes(range=[0, (max(consumo, meta) or 1) * 1.05])
-    fig.update_yaxes(autorange="reversed", automargin=False)
+    fig.update_xaxes(
+        range=[0, (max(consumo, meta) or 1) * 1.05],
+        tickfont=dict(size=15)  # <-- números embaixo: 0, 100, 200...
+    )
+    fig.update_yaxes(
+        autorange="reversed", automargin=False,
+        tickfont=dict(size=15)  # <-- nomes do lado: Consumo / Meta
+    )
     fig.update_layout(height=200, margin=dict(
         l=110, r=10, t=10, b=10), showlegend=False)
     return fig
@@ -260,7 +272,7 @@ def fig_faixa_imc(r: dict) -> go.Figure:
                                  marker=dict(symbol="circle-cross", size=20, color=cor,
                                              line=dict(color="black", width=2)),
                                  hovertemplate=f"<b>{nome}</b>: {br(valor)} kg/m²"
-                                               f"<br>{calc.classificar_imc(valor)}<extra></extra>"))
+                                 f"<br>{calc.classificar_imc(valor)}<extra></extra>"))
     fig.update_xaxes(range=[15, 45], tickvals=[
                      18.5, 25, 30, 35, 40], showgrid=False)
     fig.update_yaxes(visible=False, range=[0, 1.2])
