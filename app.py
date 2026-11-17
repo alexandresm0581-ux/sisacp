@@ -77,11 +77,14 @@ st.markdown("""
 # O hover continua funcionando. Para voltar a barra: displayModeBar -> True
 CONFIG_PLOTLY = {"displayModeBar": False}
 
+# os 3 gráficos do "dia" usam a MESMA altura (alinha o eixo X)
+ALTURA_GRAFICO_DIA = 260
+
 
 def mostrar(fig: go.Figure) -> None:
     # Zoom liberado. Para voltar à visão total: dois toques (ou duplo clique) no gráfico.
+    fig.update_layout(font=dict(size=13))  # mesma fonte em todos os gráficos
     st.plotly_chart(fig, width="stretch", config=CONFIG_PLOTLY)
-
 
 # =====================================================================
 # LOGIN - Trava o app com senha
@@ -168,6 +171,12 @@ if not db.banco_existe():
 
 
 def fig_nutrientes(consumo: dict, meta: dict) -> go.Figure:
+    # ==== AJUSTE DE TAMANHO DOS TEXTOS - mexa só aqui ====
+    TAM_TEXTO_CIMA = 13   # <-- 31,7% / 599 / 1.892 kcal - texto em cima da barra
+    TAM_TEXTO_BAIXO = 13  # <-- Calorias, Proteínas, Carboidratos, Gorduras - texto embaixo
+    TAM_TEXTO_LADO = 12   # <-- 0%, 20%, 40%, 60%... - texto do lado esquerdo
+    # =====================================================
+
     nomes = ["Calorias", "Proteínas", "Carboidratos", "Gorduras"]
     chaves = ["kcal", "proteinas", "carboidratos", "gorduras"]
     unidades = ["kcal", "g", "g", "g"]
@@ -176,47 +185,52 @@ def fig_nutrientes(consumo: dict, meta: dict) -> go.Figure:
     rotulos = [f"<b>{br(p)}%</b><br>{br(consumo[k], 0 if u == 'kcal' else 1)} / "
                f"{br(meta[k], 0 if u == 'kcal' else 1)} {u}"
                for p, k, u in zip(pct, chaves, unidades)]
+    # texto do hover: consumido, meta, % atingido e quanto falta
     detalhes = [[br(consumo[k], 0 if u == "kcal" else 1), br(meta[k], 0 if u == "kcal" else 1), u,
                  br(p), br(max(meta[k] - consumo[k], 0), 0 if u == "kcal" else 1)]
                 for p, k, u in zip(pct, chaves, unidades)]
     fig = go.Figure(go.Bar(
         x=nomes, y=pct, marker_color=cores, text=rotulos, textposition="outside",
-        textfont=dict(size=18),  # <-- número em cima da barra: 63,7% etc.
+        textfont=dict(size=TAM_TEXTO_CIMA),
         customdata=detalhes,
         hovertemplate=("<b>%{x}</b><br>Consumido: %{customdata[0]} %{customdata[2]}"
                        "<br>Meta do dia: %{customdata[1]} %{customdata[2]}"
                        "<br>Atingido: %{customdata[3]}%"
                        "<br>Falta: %{customdata[4]} %{customdata[2]}<extra></extra>")))
     fig.add_hline(y=100, line_dash="dash", line_color="#888")
-    fig.update_yaxes(
-        range=[0, max(125, max(pct) + 25)], ticksuffix="%",
-        tickfont=dict(size=15)  # <-- % do lado esquerdo: 0%, 20%...
-    )
-    fig.update_xaxes(
-        tickfont=dict(size=16)  # <-- nomes embaixo: Calorias, Proteínas...
-    )
-    fig.update_layout(height=360, margin=dict(
-        l=10, r=10, t=10, b=10), showlegend=False)
+    fig.update_yaxes(range=[0, max(125, max(pct) + 25)], ticksuffix="%",
+                     tickfont=dict(size=TAM_TEXTO_LADO))
+    # margem inferior fixa: eixo X na mesma linha dos outros
+    fig.update_xaxes(automargin=False, tickfont=dict(size=TAM_TEXTO_BAIXO))
+    fig.update_layout(height=ALTURA_GRAFICO_DIA, margin=dict(
+        l=10, r=10, t=10, b=30), showlegend=False)
     return fig
 
 
 def fig_meta_consumo(consumo: float, meta: float, unid: str, cor_c: str, cor_m: str) -> go.Figure:
+    # ==== AJUSTE DE TAMANHO DOS TEXTOS - CALORIAS E ÁGUA - mexa só aqui ====
+    # Vale para os DOIS gráficos, porque os dois usam esta mesma função.
+    TAM_NUMERO_DENTRO = 18  # <-- 599, 643, 1.350, 3.000 - número dentro da barra
+    # <-- Consumo (kcal), Meta (kcal), Consumo (ml), Meta (ml) - texto do lado
+    TAM_TEXTO_LADO = 14
+    # <-- 0, 100, 200... 600 / 0, 500, 1000... 3.000 - números embaixo
+    TAM_NUMERO_EMBAIXO = 14
+    # =======================================================================
+
     fig = go.Figure(go.Bar(
         y=[f"Consumo ({unid})", f"Meta ({unid})"], x=[consumo, meta], orientation="h",
         marker_color=[cor_c, cor_m], text=[br(consumo, 0), br(meta, 0)], textposition="auto",
-        # <-- número dentro da barra: 599 / 643
-        textfont=dict(size=18, color="white"),
+        textfont=dict(size=TAM_NUMERO_DENTRO),
         hovertemplate=f"<b>%{{y}}</b><br>%{{text}} {unid}<extra></extra>"))
+    # margem esquerda FIXA e escala até a maior barra: os dois gráficos (calorias e
+    # água) ficam com a mesma área útil e as barras de meta terminam no mesmo ponto
     fig.update_xaxes(
-        range=[0, (max(consumo, meta) or 1) * 1.05],
-        tickfont=dict(size=15)  # <-- números embaixo: 0, 100, 200...
-    )
-    fig.update_yaxes(
-        autorange="reversed", automargin=False,
-        tickfont=dict(size=15)  # <-- nomes do lado: Consumo / Meta
-    )
-    fig.update_layout(height=200, margin=dict(
-        l=110, r=10, t=10, b=10), showlegend=False)
+        range=[0, (max(consumo, meta) or 1) * 1.05], automargin=False,
+        tickfont=dict(size=TAM_NUMERO_EMBAIXO))
+    fig.update_yaxes(autorange="reversed", automargin=False,
+                     tickfont=dict(size=TAM_TEXTO_LADO))
+    fig.update_layout(height=ALTURA_GRAFICO_DIA, margin=dict(
+        l=110, r=10, t=10, b=30), showlegend=False)
     return fig
 
 
@@ -236,21 +250,35 @@ def fig_peso_imc(df, meta_kg: float) -> go.Figure:
     rotulos = [f"{d[8:10]}/{d[5:7]}" for d in df["data"]]
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_bar(x=rotulos, y=df["peso_kg"], name="Peso (kg)", marker_color="#FFB066",
-                text=[br(p) for p in df["peso_kg"]], textposition="outside", secondary_y=False,
+                text=[br(p) for p in df["peso_kg"]], textposition="outside",
+                textfont=dict(size=13),  # <-- 120,4 em cima da barra
+                secondary_y=False,
                 hovertemplate="<b>Pesagem de %{x}</b><br>Peso: %{text} kg<extra></extra>")
     fig.add_scatter(x=rotulos, y=df["imc"], name="IMC (kg/m²)", mode="lines+markers+text",
                     line_color="#4A90D9", text=[br(i) for i in df["imc"]],
-                    textposition="top center", secondary_y=True,
+                    textposition="top center",
+                    textfont=dict(size=13),  # <-- 37,2 em cima da linha
+                    secondary_y=True,
                     hovertemplate="<b>IMC em %{x}</b><br>%{text} kg/m²<extra></extra>")
     baixo = math.floor((min(meta_kg, df["peso_kg"].min()) - 1) / 10) * 10
     cima = math.ceil(df["peso_kg"].max() / 10) * 10
-    fig.update_yaxes(range=[baixo, cima], title_text="kg", secondary_y=False)
+    fig.update_yaxes(range=[baixo, cima], title_text="kg", secondary_y=False,
+                     # <-- lado esquerdo kg
+                     tickfont=dict(size=15), title_font=dict(size=13))
     fator = (df["peso_kg"] / df["imc"]).mean()
+    # NÃO MEXER AQUI: este range é o que mantém a linha do IMC acima das barras, como no Gráfico 1
     fig.update_yaxes(range=[baixo / fator - 2, cima / fator - 2], title_text="IMC",
-                     secondary_y=True, showgrid=False)
-    fig.update_xaxes(type="category")
-    fig.update_layout(height=320, margin=dict(l=10, r=10, t=50, b=10),
-                      legend=dict(orientation="h", y=1.12))
+                     secondary_y=True, showgrid=False,
+                     # <-- lado direito IMC
+                     tickfont=dict(size=15), title_font=dict(size=13))
+    fig.update_xaxes(type="category", tickfont=dict(
+        size=13))  # <-- datas embaixo
+    # CORREÇÃO DA LEGENDA: era height=320 / t=50 / legend y=1.12
+    # A legenda com fonte 15 não cabia em t=50 e descia para dentro do gráfico, tampando o 37,2.
+    # Agora: t=90 abre espaço, y=1.28 sobe a legenda para fora, yanchor trava ela pela base.
+    fig.update_layout(height=360, margin=dict(l=10, r=10, t=90, b=10),
+                      legend=dict(orientation="h", x=0, xanchor="left",
+                                  y=1.28, yanchor="bottom", font=dict(size=15)))
     return fig
 
 
@@ -263,7 +291,8 @@ def fig_faixa_imc(r: dict) -> go.Figure:
         fig.add_shape(type="rect", x0=x0, x1=x1, y0=0, y1=1,
                       fillcolor=cor, line_width=0, layer="below")
         fig.add_annotation(x=(x0 + x1) / 2, y=1.1, text=f"<b>{nome}</b>", showarrow=False,
-                           font=dict(size=12, color="#000000"))
+                           # <-- nomes em cima: era 12, foi pra 14
+                           font=dict(size=18, color="#000000"))
     marcadores = [("IMC atual", r["imc_atual"], 0.7, "#2F80ED"),
                   ("IMC inicial", r["imc_inicial"], 0.3, "#C00000"),
                   ("Meta", r["imc_meta"], 0.5, "#FFFFFF")]
@@ -274,10 +303,15 @@ def fig_faixa_imc(r: dict) -> go.Figure:
                                  hovertemplate=f"<b>{nome}</b>: {br(valor)} kg/m²"
                                  f"<br>{calc.classificar_imc(valor)}<extra></extra>"))
     fig.update_xaxes(range=[15, 45], tickvals=[
-                     18.5, 25, 30, 35, 40], showgrid=False)
+                     18.5, 25, 30, 35, 40], showgrid=False,
+                     # <-- números embaixo: 18,5 / 25...
+                     tickfont=dict(size=16))
     fig.update_yaxes(visible=False, range=[0, 1.2])
     fig.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=100),
-                      legend=dict(orientation="h", y=-0.3), plot_bgcolor="white")
+                      legend=dict(orientation="h", y=-0.3,
+                                  # <-- legenda embaixo: IMC atual...
+                                  font=dict(size=16)),
+                      plot_bgcolor="white")
     return fig
 
 
@@ -290,11 +324,17 @@ def fig_atividades(df) -> go.Figure:
         fig.add_bar(x=rotulos, y=[int(sub["qtde"].get(m, 0)) for m in meses], name=atividade,
                     marker_color=COR_ATIVIDADE.get(atividade), text=[int(sub["qtde"].get(m, 0)) or "" for m in meses],
                     textposition="outside",
+                    # <-- número em cima da barra: 1, 4, 5...
+                    textfont=dict(size=16),
                     customdata=[int(sub["minutos"].get(m, 0)) for m in meses],
                     hovertemplate=("<b>%{fullData.name}</b> — %{x}<br>%{y} sessão(ões)"
                                    "<br>%{customdata} min no total<extra></extra>"))
+    fig.update_xaxes(tickfont=dict(size=16))  # <-- out/26, nov/26 embaixo
+    fig.update_yaxes(tickfont=dict(size=16), title_font=dict(
+        size=16))  # <-- 0, 1, 2... e "Sessões"
     fig.update_layout(barmode="group", height=320, margin=dict(l=10, r=10, t=50, b=10),
-                      legend=dict(orientation="h", y=1.12), yaxis_title="Sessões")
+                      # <-- legenda
+                      legend=dict(orientation="h", y=1.12, font=dict(size=16)), yaxis_title="Sessões")
     return fig
 
 
@@ -302,20 +342,27 @@ def fig_por_refeicao(df) -> go.Figure:
     fig = go.Figure()
     fig.add_bar(x=df["refeicao"], y=df["consumo_kcal"], name="Consumo (kcal)", marker_color="#00B050",
                 text=[br(v, 0) for v in df["consumo_kcal"]], textposition="outside",
+                textfont=dict(size=15),  # <-- 599, 457... da barra verde
                 hovertemplate="<b>%{x}</b><br>Consumo: %{text} kcal<extra></extra>")
     fig.add_bar(x=df["refeicao"], y=df["meta_kcal"], name="Meta (kcal)", marker_color="#C9D9C9",
                 text=[br(v, 0) for v in df["meta_kcal"]], textposition="outside",
+                textfont=dict(size=16),  # <-- 643, 368... da barra clara
                 hovertemplate="<b>%{x}</b><br>Meta: %{text} kcal<extra></extra>")
     topo = max(df["consumo_kcal"].max(), df["meta_kcal"].max())
-    fig.update_yaxes(range=[0, topo * 1.15])
+    # <-- 0, 200, 400... do lado
+    fig.update_yaxes(range=[0, topo * 1.15], tickfont=dict(size=16))
+    # <-- Café da Manhã, Almoço... embaixo
+    fig.update_xaxes(tickfont=dict(size=16))
     fig.update_layout(barmode="group", height=320, margin=dict(l=10, r=10, t=50, b=10),
-                      legend=dict(orientation="h", y=1.12))
+                      # <-- legenda
+                      legend=dict(orientation="h", y=1.12, font=dict(size=16)))
     return fig
-
 
 # =====================================================================
 # [MELHORIA 5] Componentes com JavaScript
 # =====================================================================
+
+
 @st.fragment(run_every="30s")
 def relogio() -> None:
     """Atualiza SOZINHO a cada 30 s (só este trecho roda de novo, não a página toda)."""
@@ -345,7 +392,6 @@ def kpi_animado(rotulo: str, valor_pct: float, chave: str) -> None:
 }})();
 </script>
 """, unsafe_allow_javascript=True)
-
 
 # =====================================================================
 # PÁGINA: PAINEL (substitui a aba PRINCIPAL)
@@ -400,7 +446,10 @@ def pagina_painel() -> None:
 
     c1, c2, c3 = st.columns([1.2, 1, 1])
     with c1:
-        st.subheader("Consumo de nutrientes (do dia)")
+        st.subheader("Consumo de nutrientes")
+        st.caption("Do dia (% da meta)")
+        kpi_animado("Evolução (meta do dia)",
+                    consumo["kcal"] / meta["kcal"] * 100 if meta["kcal"] else 0, "nutri")
         mostrar(fig_nutrientes(consumo, meta))
     with c2:
         st.subheader("Calorias")
