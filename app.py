@@ -173,7 +173,7 @@ if not db.banco_existe():
 def fig_nutrientes(consumo: dict, meta: dict) -> go.Figure:
     # ==== AJUSTE DE TAMANHO DOS TEXTOS - mexa só aqui ====
     TAM_TEXTO_CIMA = 13   # <-- 31,7% / 599 / 1.892 kcal - texto em cima da barra
-    TAM_TEXTO_BAIXO = 13  # <-- Calorias, Proteínas, Carboidratos, Gorduras - texto embaixo
+    TAM_TEXTO_BAIXO = 16  # <-- Calorias, Proteínas, Carboidratos, Gorduras - texto embaixo
     TAM_TEXTO_LADO = 12   # <-- 0%, 20%, 40%, 60%... - texto do lado esquerdo
     # =====================================================
 
